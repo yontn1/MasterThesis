@@ -1,6 +1,5 @@
-%notes (especially for Carsten): 
-% 1) in all the rules, the types of T should be allowed to change. The reason I keep them for now is because this way is easier to write proofs 
-% unbound expressions.
+% Author Yonathan Volpin
+% This is partial code (only the type system) contact Yonathan Volpin (yivolpin@gmail.com) for full code.
 
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -18,8 +17,7 @@ fieldlist : tp.
 <=/eq : <= L L.
 <=/lt : <= low high.
 
-	% L L'
-	 % <- <' L  L'.
+ 
 
 join : level -> level -> level -> type.
 join/1 : join low low low.
@@ -50,8 +48,7 @@ subtp/=>3 : subtp (=>' PC BL T1 T2) (=>' PC' BL T1 T2)
       
 ofe : level -> level -> exp -> tau -> type.
 ofc : level -> level -> cmd -> tau ->  type. % added a level for blocking level counter PSNI
-% ofv : v -> tau -> type.
-off : property -> tau -> type. 
+ off : property -> tau -> type. 
 offs : fields -> tau -> type.
 ofk : level -> cont -> tau -> tau -> type.  
 ofo : obj -> tau -> type.
@@ -67,8 +64,7 @@ ofo : obj -> tau -> type.
 % Subtyping
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Probably broken for now, should be a rule for each case.
-
+ 
 of/sub/ofe :  ofe PC' BL E T'
 	   <- subtau T T'
 	   <- sublevel PC PC' 
@@ -80,24 +76,8 @@ of/sub/ofc :  ofc PC' BL C T'
 	   <- ofc PC BL C T.
 
 	  
-% of/sub/off :  off F T' % this is actually of label...
-%	   <- subtau T T'
-%	   <- off F T.
-	   
-% of/sub/offs :  offs FS T'
-%	   <- subtau T T'
-%	   <- offs FS T.
-	   
-	   
-% of/sub/ofk : ofk PC' K T1' T2'
-          % <- subtau T1 T1'
-	 %  <- subtau T2 T2'
-	%   <- sublevel PC PC'
-	%   <- ofk PC K T1 T2.
-	   
-% of/sub/ofo :  ofo O T'
-%	   <- subtau T T'
-%	   <- ofo O T.	   
+ 
+ 	   
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Rules for expressions
@@ -126,8 +106,7 @@ of/app : ofe PC BL E1 (#' (=>' LE BL (#' T1 L1) (#' T2 L2)) L3)
 
 of/undef : ofe PC BL undef (#' nat L).
 
-% of/emptyobj: ofe PC BL emptyobj L.
-
+ 
 
 
 of/assign : ofe PC BL2 (assign E1 F E2) (#' T1 L2)  %unbound?
@@ -206,13 +185,7 @@ of/throw : Pi T1. ofc PC' BL (throw K E) T        % Invariant:  PC >= PC'
 	    <- ofk PC' K T1 T
 	    <- ofe PC' BL E T1.
 
-% of/throw : Pi T1. ofc PC' BL (throw K E) T        % Invariant:  PC >= PC'
-% 	    <- ofk PC' K T1 T
-% 	    <- ofe PC' BL E T1.
-
-% of/remove : ofc PC BL (remove K) T
-%	    <-  ofk PC K T1 T.
-
+ 
 of/return : ofc PC BL (return E) T
 		<- ofe PC BL E T.
 
@@ -242,10 +215,7 @@ of/newproperty : Pi T'. ofc PC BL (newproperty \!F. C !F) (#' T L)
 	<- (Pi F. off F (#' T' L') -> ofc PC BL (C !F) (#' T L))
 	<- <= L' L. 
 
-% of/doto : ofv (doto O F) (#' T L)%
-%	<- off F (#' T L)
-%	<- ofo O (#' objectable L).
-
+ 
 of/dec : ofe PC BL (dec E) (#' nat L)
 	<- ofe PC BL E (#' nat L).
 
