@@ -1,0 +1,382 @@
+%notes (especially for Carsten): 
+% 1) in all the rules, the types of T should be allowed to change. The reason I keep them for now is because this way is easier to write proofs 
+% unbound expressions.
+
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Type system for IFC
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+objectable : tp.
+fieldlist : tp.
+
+
+<' : level -> level -> type. 
+</1 : <' low high.
+
+<= : level -> level -> type. 
+<=/eq : <= L L.
+<=/lt : <= low high.
+
+	% L L'
+	 % <- <' L  L'.
+
+join : level -> level -> level -> type.
+join/1 : join low low low.
+join/2 : join high low high.
+join/3 : join low high high.
+join/4 : join high high high.
+
+
+subtau : tau -> tau -> type.
+subtp : tp -> tp -> type.
+sublevel : level -> level -> type.
+subtau/# : subtau (#' T L) (#' T' L')
+	    <- subtp T T'
+	    <- <' L L'.
+sublevel/PC : sublevel PC PC'
+	    <- <' PC' PC.
+subtp/nat: subtp nat nat.
+subtp/bool: subtp bool bool.
+subtp/one: subtp one one.
+
+subtp/=>1 : subtp (=>' PC BL T1 T2) (=>' PC BL T1' T2)
+	    <- subtau T1' T1.
+subtp/=>2 : subtp (=>' PC BL T1 T2) (=>' PC BL T1 T2')
+	    <- subtau T2 T2'.
+subtp/=>3 : subtp (=>' PC BL T1 T2) (=>' PC' BL T1 T2)
+	    <- sublevel PC PC'.	 
+      
+      
+ofe : level -> level -> exp -> tau -> type.
+ofc : level -> level -> cmd -> tau ->  type. % added a level for blocking level counter PSNI
+% ofv : v -> tau -> type.
+off : property -> tau -> type. 
+offs : fields -> tau -> type.
+ofk : level -> cont -> tau -> tau -> type.  
+ofo : obj -> tau -> type.
+% ofe P BL E T   corresponds to:  PC; G |- E T
+% ofc PC BL C T   corresponds to: PC; BL; G |- C T
+% off for propertys.
+% ofv V T  
+% ofk PC K T1 T2  corresponds to: The catch clause expects something of type T1 and the continuation will yield something of type T2. 
+% ofo for objects.
+
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Subtyping
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Probably broken for now, should be a rule for each case.
+
+of/sub/ofe :  ofe PC' BL E T'
+	   <- subtau T T'
+	   <- sublevel PC PC' 
+	   <- ofe PC BL E T.
+	  
+of/sub/ofc :  ofc PC' BL C T'
+	   <- subtau T T'
+	   <- sublevel PC PC'
+	   <- ofc PC BL C T.
+
+	  
+% of/sub/off :  off F T' % this is actually of label...
+%	   <- subtau T T'
+%	   <- off F T.
+	   
+% of/sub/offs :  offs FS T'
+%	   <- subtau T T'
+%	   <- offs FS T.
+	   
+	   
+% of/sub/ofk : ofk PC' K T1' T2'
+          % <- subtau T1 T1'
+	 %  <- subtau T2 T2'
+	%   <- sublevel PC PC'
+	%   <- ofk PC K T1 T2.
+	   
+% of/sub/ofo :  ofo O T'
+%	   <- subtau T T'
+%	   <- ofo O T.	   
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Rules for expressions
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+of/true : ofe PC BL true (#' bool L).
+
+of/false : ofe PC BL false (#' bool L).
+
+of/unit : ofe PC BL unit (#' one L).
+
+of/z : ofe PC BL  z (#' nat L).
+
+of/s : ofe PC BL (s E) (#' nat L)
+ 	<- ofe PC BL E (#' nat L) .
+
+of/fn : ofe PC BL (fn \!x. C !x) (#' (=>' LE BL T1 T2) low)
+           <- (Pi x. ofe LE BL x T1 -> ofc LE BL (C !x) T2).   % is this really low ?  -cs i dont think so, cant always allow high output here -yv
+	   
+of/app : ofe PC BL E1 (#' (=>' LE BL (#' T1 L1) (#' T2 L2)) L3)
+	  -> ofe PC BL E2 (#' T1 L1)
+	  -> <= L2 L3                        % the property of the result can't be higher than the property of the function (as then the function would leak its result).
+	  -> join PC L3 PC2
+	  -> <= PC2 LE                    % side effects of the function can't be lower than the property of the function or the PC.
+	  -> ofe PC BL (app E1 E2) (#' T2 L2).
+
+of/undef : ofe PC BL undef (#' nat L).
+
+% of/emptyobj: ofe PC BL emptyobj L.
+
+
+
+of/assign : ofe PC BL2 (assign E1 F E2) (#' T1 L2)  %unbound?
+	     <- <= BL1 BL2
+	     <- <= PC L2
+	     <- <= L1 L2
+	     <- <= L3 L2                     % the level of the property can't be lower than the level of the context 
+	     <- ofe PC BL1 E2 (#' T1 L1)	     % does'nt matter it E is lower than L', as u can arise E to a higher level.
+	     <- off F (#' T1 L2)             % has to be high if L' or PC are high
+	     <- ofe PC BL2 E1 (#' objectable L3).     % the idea is that when pc is high, low assignments are forbidden , check that V is higher or equal to both PC and L.
+	                                    
+
+of/not : ofe PC BL (not E) (#' bool L)
+	  <- ofe PC BL E (#' bool L).
+
+
+of/== : Pi T1. Pi T2. ofe PC BL2 (== E1 E2) (#' bool L3) %unbound?
+	 <- ofe PC BL2 E2 (#' T2 L2)
+	 <- ofe PC BL1 E1 (#' T1 L1) 
+	 <- join L1 L2 L3
+	  <- <= BL1 BL2.
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Rules for commands
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% BL stands for Blocking Level in PSNI.
+
+of/# :  ofe PC BL E (#' T L) 
+	   -> ofc PC BL (# E) (#' T L).
+
+
+of/var :  ofc PC BL2 (var E1 F (#' T1 L1) E2) (#' T2 L2)
+	   <- <= BL1 BL2
+	   <- <= L1 L3 % The enviorment object can't be lower than the field property
+           <- (Pi o. ofo o (#' objectable L1) -> ofe PC BL2 (E2 !o) (#' T2 L2))
+	   <- off F (#' T1 L1)
+	   <- ofe PC BL1 E1 (#' objectable L3)
+	   <- <= L2 L1 % Can't assign anything high to a lower variable
+	   <- <= PC L1. % Can't have low assignment in a high context.
+
+
+of/; : Pi T1. ofc PC BL2 (; C1 C2) (#' T2 L4)  %unbound?
+	<- ofc PC BL2 C2 (#' T2 L3)
+        <- ofc PC BL1 C1 (#' T1 L2)
+	<- join L2 L3 L4 
+	<- <= BL1 BL2.
+
+of/while : ofc PC L1 (while E C) (#' T L3) 
+	 <- ofc L3 L1 C (#' T L4)
+	 <- ofe PC L1 E (#' bool L2)
+	 <- join PC L2 L3
+	 <- <= L2 L1
+	 <- <= L2 L3.
+	
+
+of/if : ofc PC BL2 (if E C1 C2) (#' S L'') 
+         <- <= BL1 BL2
+	 <- join PC L L'
+	 <- ofe PC BL1 E1 (#' bool L)
+	 <- ofc L' BL2 C1 (#' S L'')
+ 	 <- ofc L' BL2 C2 (#' S L'')
+	 <- <= L'' L.
+
+of/skip : ofc PC BL skip L.
+
+of/trycatchfinally : Pi PC'. ofc PC BL3 (trycatchfinally C1 T1 C2 C3) T2
+         <- <= PC PC'
+	 <- <= BL1 BL2
+	 <- <= BL2 BL3
+         <- (Pi k. ofk PC' k T1 T2 -> ofc PC BL1 (C1 !k) T2)                  % normal execution
+         <- (Pi e. ofe PC' BL e T1 -> ofc PC' BL2 (C2 !e) T2)
+         <- ofc PC BL3 C3 T2.                   % exceptional execution
+
+of/throw : Pi T1. ofc PC' BL (throw K E) T        % Invariant:  PC >= PC'
+	    <- ofk PC' K T1 T
+	    <- ofe PC' BL E T1.
+
+% of/throw : Pi T1. ofc PC' BL (throw K E) T        % Invariant:  PC >= PC'
+% 	    <- ofk PC' K T1 T
+% 	    <- ofe PC' BL E T1.
+
+% of/remove : ofc PC BL (remove K) T
+%	    <-  ofk PC K T1 T.
+
+of/return : ofc PC BL (return E) T
+		<- ofe PC BL E T.
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Rules for Object system
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+of/new : ofe PC BL2 (new E1 E2) (#' T L')
+          <- <= BL1 BL2
+          <- ofe PC BL1 E1 (#' objectable L)
+	  <- <= L' L % the level of argument can't be higher than the level of the new object.
+	  <- ofe PC BL2 E2 (#' T L').	
+	  
+of/field : Pi T. Pi L1. Pi L2. offs (field F FS) (#' fieldlist L3)
+          <- off F (#' T L2)
+	  <- offs FS (#' fieldlist L1)
+	  <- join L1 L2 L3.
+	    
+	  
+of/nil : offs nil (#' fieldlist low).
+
+of/dot : ofe PC BL (dot E F) (#' T L) % maybe missing a condition 
+	<- off F (#' T L)
+	<- ofe PC BL E (#' objectable L).
+	
+of/newproperty : Pi T'. ofc PC BL (newproperty \!F. C !F) (#' T L)
+	<- (Pi F. off F (#' T' L') -> ofc PC BL (C !F) (#' T L))
+	<- <= L' L. 
+
+% of/doto : ofv (doto O F) (#' T L)%
+%	<- off F (#' T L)
+%	<- ofo O (#' objectable L).
+
+of/dec : ofe PC BL (dec E) (#' nat L)
+	<- ofe PC BL E (#' nat L).
+
+of/ref : ofe PC BL (ref O) (#' T L)
+	<- ofo O (#' T L).
+
+of/global : ofo global (#' objectable L).
+
+of/emptyobj : ofe PC BL emptyobj (#' T low).
+
+of/fix : ofe PC BL (fix \!x. E !x) (#' (=>' LE BL2 T1 T2) low)
+ 	  <- (Pi x. ofe LE BL x T1 -> ofe LE BL (E !x) T2)
+	  <- join LE BL BL2. 
+
+	
+%% Examples
+
+
+basic3 : cmd
+  = newproperty \!person.
+    newproperty \!name.
+    (; (var' !person !(#' one low) !emptyobj)
+    (; (# (assign' !person !emptyobj))
+    (; (var (dot (ref global) person) name !(#' nat low) (\!this. s z))
+    skip))).
+
+advobject2: cmd
+ = newproperty \!safe.
+   newproperty \!data.
+   newproperty \!show.
+   newproperty \!cipher.
+   newproperty \!encrypt.
+   newproperty \!decrypt.
+   newproperty \!result.
+   (; (var' !safe !(#' objectable low) !emptyobj)
+   (; (var (dot' !safe) data !(#' nat low) (\!this. s (s (s z))))
+   (; (var (dot' !safe) show !(#' (=>' low low (#' one low) (#' nat low)) low) (\!this. fn \!x. return (s (dot (ref this) data))))
+   (; (var (dot' !safe) cipher !(#' nat low) (\!this. s (s z)))
+   (; (var (dot' !safe) encrypt !(#' (=>' low low (#' one low) (#' one low)) low)
+            (\!this. fn \!x. ;
+	       (# (assign (ref this) cipher (s (dot (ref this) data))))
+                   (return unit)))
+   (; (var (dot' !safe) decrypt !(#' (=>' low low (#' one low) (#' nat low)) low)
+            (\!this. fn \!x.  return (dec (dot (ref this) cipher))))
+   (; (# (app (dot (dot' !safe) encrypt) unit))
+   (return (app (dot (dot' !safe) decrypt) unit))))))))).
+
+deriv_advobj:
+	ofc low low advobject2 (#' nat low) =
+		of/newproperty objectable <=/eq (\!safee. \!safe.
+		of/newproperty nat <=/eq (\!dataa. \!data.
+		of/newproperty (=>' low low (#' one low) (#' nat low)) <=/eq (\!showw. \!show.
+		of/newproperty nat <=/eq (\!cipherr. \!cipher.
+		of/newproperty (=>' low low (#' one low) (#' one low)) <=/eq (\!encryptt. \!encrypt.
+		of/newproperty (=>' low low (#' one low) (#' nat low)) <=/eq (\!decryptt. \!decrypt.
+		of/newproperty nat <=/eq (\!resultt. \!result.
+		(of/; objectable <=/eq join/1 
+				(of/var <=/eq <=/eq (of/ref (of/global : ofo global (#' objectable low))) safe (\!this. \!thisp. (of/emptyobj : ofe low low emptyobj (#' objectable low))) <=/eq <=/eq)
+		(of/; nat <=/eq join/1 
+				(of/var <=/eq <=/eq (of/dot (of/ref (of/global : ofo global (#' objectable low))) safe) data (\!this. \!thisp. (of/s (of/s (of/s (of/z : ofe low low z (#' nat low)))))) <=/eq <=/eq)
+		(of/; (=>' low low (#' one low) (#' nat low)) <=/eq join/1 
+				(of/var <=/eq <=/eq (of/dot (of/ref (of/global : ofo global (#' objectable low))) safe) show
+					 (\!this. \!thisp. of/fn (\!xx. \!xxx. (of/return (of/s (of/dot (of/ref thisp) data))))) 
+					 <=/eq <=/eq)
+		(of/; (nat) <=/eq join/1 
+			(of/var <=/eq <=/eq (of/dot (of/ref (of/global : ofo global (#' objectable low))) safe) cipher (\!this. \!thisp. (of/s (of/s (of/z : ofe low low z (#' nat low))))) <=/eq <=/eq)
+		(of/; (=>' low low (#' one low) (#' one low)) <=/eq join/1 
+				(of/var <=/eq <=/eq (of/dot (of/ref (of/global : ofo global (#' objectable low))) safe) encrypt
+					(\!this. \!thisp. of/fn (\!xx. \!xxx.
+							( of/;  nat <=/eq join/1 (of/# (of/assign (of/ref thisp) cipher    (of/s (of/dot (of/ref thisp) data)) <=/eq <=/eq <=/eq <=/eq))
+							(of/return (of/unit: ofe low low unit (#' one low))))))
+				 <=/eq <=/eq)
+		(of/; (=>' low low (#' one low) (#' nat low)) <=/eq join/1 
+						(of/var <=/eq <=/eq (of/dot (of/ref (of/global : ofo global (#' objectable low))) safe) decrypt
+							(\!this. \!thisp.  of/fn (\!xx. \!xxx.
+								( of/return (of/dec(of/dot  (of/ref thisp) cipher)))))
+						 <=/eq <=/eq)
+		(of/;  one <=/eq join/1 (of/# (of/app (of/dot (of/dot (of/ref (of/global : ofo global (#' objectable low))) safe) encrypt) (of/unit: ofe low low unit (#' one low)) <=/eq join/1 <=/eq ))
+			(of/return (of/app (of/dot (of/dot (of/ref (of/global : ofo global (#' objectable low))) safe) decrypt) (of/unit: ofe low low unit (#' one low)) <=/eq join/1 <=/eq )))))))))))))))).
+
+
+advwhile2
+  : cmd
+  = newproperty \!l.
+    newproperty \!t.
+    newproperty \!h.
+    (; (var' !l !(#' nat low) !undef)
+    (; (var' !t !(#' nat high) !undef)
+    (; (var' !h !(#' nat high) !undef)
+    (; (# (assign' !l !(s z)))
+    (; (# (assign' !t !z))
+    (; (while (== (dot' !h) (s z))
+    	       (# (assign' !t !(s z)))) 
+    (; (while (not (== (dot' !t) !(s z)))
+    	       (# (assign' !t !(s z))))
+    (return (dot' !t))))))))).
+    
+deriv_advwhile:
+	ofc low high advwhile2 (#' nat high) =
+	of/newproperty nat <=/lt (\!llllll. \!l.
+	of/newproperty nat <=/eq (\!tt. \!t.
+	of/newproperty nat <=/eq (\!hh. \!h.
+	(of/; (nat) <=/lt join/3 
+		(of/var <=/eq <=/eq (of/ref (of/global : ofo global (#' objectable low))) l   (\!this. \!thisp. (of/undef : ofe low low undef (#' nat low))) <=/eq <=/eq)
+	(of/; (nat) <=/lt join/4 
+		(of/var <=/lt <=/eq (of/ref (of/global : ofo global (#' objectable high))) t   (\!this1. \!thisp1. (of/undef : ofe low low undef (#' nat high))) <=/eq <=/eq)
+	(of/; (nat) <=/lt join/4
+		(of/var <=/lt <=/eq (of/ref (of/global : ofo global (#' objectable high))) h   (\!this2. \!thisp2. (of/undef : ofe low low undef (#' nat high))) <=/eq <=/eq)
+	(of/; (nat) <=/lt join/3 
+		(of/# (of/assign (of/ref (of/global : ofo global (#' objectable low))) l    (of/s (of/z : ofe low low z (#' nat low)) ) <=/eq <=/eq <=/eq <=/eq))
+	(of/; (nat) <=/lt join/4 
+		(of/# (of/assign (of/ref (of/global : ofo global (#' objectable high))) t    (of/z : ofe low low z (#' nat high))  <=/eq <=/eq <=/lt <=/eq))
+	(of/; (nat) <=/eq join/4 
+		(of/while <=/eq <=/eq join/3
+			(of/== nat nat <=/eq join/4
+				(of/dot  (of/ref (of/global : ofo global (#' objectable high))) h)
+				(of/s (of/z : ofe low high z (#' nat high))))
+			(of/# (of/assign (of/ref (of/global : ofo global (#' objectable high))) t 
+				(of/s (of/z : ofe high high z (#' nat high)) ) <=/eq <=/eq <=/eq <=/eq)))
+	(of/; (nat) <=/eq join/4 
+		(of/while <=/eq <=/eq join/3 
+			(of/not (of/== nat nat <=/eq join/4
+				(of/dot  (of/ref (of/global : ofo global (#' objectable high))) t)
+				(of/s (of/z : ofe low high z (#' nat high)))))
+			(of/# (of/assign (of/ref (of/global : ofo global (#' objectable high))) t 
+				(of/s (of/z : ofe high high z (#' nat high)) ) <=/eq <=/eq <=/eq <=/eq)))
+	(of/return (of/dot  (of/ref (of/global : ofo global (#' objectable high))) t)))))))))))).
+	
+	
+	
+	
+	
+	
+	
